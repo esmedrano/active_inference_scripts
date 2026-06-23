@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.pytest_cache/
+*.log
+.DS_Store
+generalized_filtering_results.png
