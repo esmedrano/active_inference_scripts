@@ -67,8 +67,8 @@ def recalculate_free_energy(lambda_y, e_y, lambda_x, e_x):
     new_f = lambda_y * (e_y ** 2) + lambda_x * (e_x ** 2) + np.log((1 / lambda_y) * (1 / lambda_x))
     return new_f
 
-def recalculate_prediction_error(u_x, theta_x, y, theta_y):
-    x_n = state_transition_function(theta_x, u_x)
+def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
+    x_n = state_transition_function(theta_x, u_x_prev)
     next_e_x = u_x - x_n
 
     u_y = observation_gnerating_function(u_x, theta_y)
@@ -113,7 +113,7 @@ def main():
     x_star = [5]
 
     # A list containing the agent's observation for each time step. The initial observation is calculated here using the observation generating function. 
-    initial_observation = observation_gnerating_function(u_x[-1], theta_y)
+    initial_observation = observation_gnerating_function(x_star[-1], theta_y)
     y = [initial_observation]
 
     ####### Generative model vars #######
@@ -137,7 +137,9 @@ def main():
     df_du = -1
 
     # Initial state prediction error
-    x_n = state_transition_function(theta_x, u_x[-1])
+    # Typically the error is calculated using the observed state u_x and the predicted state, 
+    # but there is no previous state on the first step so we use the u_x - f(u_x, theta_x) 
+    x_n = state_transition_function(theta_x, u_x[-1])  
     e_x = [u_x[-1] - x_n]
 
     # Initial observation prediction error
@@ -153,7 +155,7 @@ def main():
 
         # Generate new external state and observation 
         x_star.append(generate_state(x_star[-1], theta_star_x))    
-        y.append(generate_observation(x_star[-1], theta_star_y))
+        y.append(generate_observation(x_star[-1], theta_y))
         # print(f"External state: {x_star}")
         # print(f"Observation: {y}")
         
@@ -166,7 +168,7 @@ def main():
         f.append(recalculate_free_energy(lambda_y, e_y[-1], lambda_x, e_x[-1]))
 
         # Update prediction errors using new observation and hidden state estimate 
-        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], theta_x, y[-1], theta_y)
+        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], u_x[-2], theta_x, y[-1], theta_y)
         e_x.append(next_e_x)
         e_y.append(next_e_y)
         u_y.append(next_u_y)
