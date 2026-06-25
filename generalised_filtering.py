@@ -52,7 +52,7 @@ def state_transition_function(theta_x, u_x):
     x_n = theta_x - u_x
     return x_n
 
-def observation_gnerating_function(u_x, theta_y):
+def observation_generating_function(u_x, theta_y):
     u_y = u_x - theta_y
     return u_y
 
@@ -71,7 +71,7 @@ def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
     x_n = state_transition_function(theta_x, u_x_prev)
     next_e_x = u_x - x_n
 
-    u_y = observation_gnerating_function(u_x, theta_y)
+    u_y = observation_generating_function(u_x, theta_y)
     next_e_y = y - u_y
     return next_e_x, next_e_y, u_y
 
@@ -107,13 +107,13 @@ def main():
     ####### Generative process vars #######
 
     theta_star_x = 10 
-    theta_y = 3
+    theta_star_y = 3
     
     # A list containing the external state of x for each time step. The initial external state is 5. 
     x_star = [5]
 
     # A list containing the agent's observation for each time step. The initial observation is calculated here using the observation generating function. 
-    initial_observation = observation_gnerating_function(x_star[-1], theta_y)
+    initial_observation = observation_generating_function(x_star[-1], theta_star_y)
     y = [initial_observation]
 
     ####### Generative model vars #######
@@ -126,6 +126,9 @@ def main():
 
     # Theta_x is used in the agents state transition function theta_x - u_x to generate it's hypothesis regarding the new value of u_x.  
     theta_x = 10
+    
+    # Theta_y is the agent's approximation of theta_star_y from the environment and is used to predict the next observation. 
+    theta_y = 3
 
     # The precisions (inverse variances) of hidden states x and observations y 
     lambda_x = 0.2
@@ -143,7 +146,7 @@ def main():
     e_x = [u_x[-1] - x_n]
 
     # Initial observation prediction error
-    u_y = [observation_gnerating_function(u_x[-1], theta_y)]
+    u_y = [observation_generating_function(u_x[-1], theta_y)]
     e_y = [initial_observation - u_y[-1]]
 
     # Initial Free Energy

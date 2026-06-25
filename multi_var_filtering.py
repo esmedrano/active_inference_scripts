@@ -1,14 +1,12 @@
 """
-This is the multivariate generalized filter for perception. In this the agent models Hooke's Law, which describes the oscilation of a linear spring. 
+This is a multivariate generalized filter for perception. The agent models Hooke's Law, which describes the oscilation of a linear spring. 
 
-The code below is copy pasted from geralisezed_filtering.py and is a work in progress. 
+The code below is copy pasted from generalized_filtering.py and is a work in progress. 
 """
 
-import matplotlib as mpl
-from matplotlib.pylab import rand
+
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy as sp 
 
 T_STEP = 0.01
 
@@ -24,104 +22,161 @@ rng = np.random.default_rng(seed=42)
 
 # Generative Process
 def generate_state(x_star, theta_star_x):
+    k = theta_star_x[0]
+    m = theta_star_x[1]
+    v = theta_star_x[2]
 
     # Velocity of external state
-    x_star_dot = theta_star_x - x_star + rng.normal(0.0, 8.0)
+    x_star_dot = [v[1] + x_star[1] + rng.normal(0.0, 8.0), (k / m) * v[0] - x_star[0] + rng.normal(0.0, 8.0)] 
 
     # x* update
-    new_x_star = x_star + x_star_dot * T_STEP
+    new_x_star = [x_star[0] + x_star_dot[0] * T_STEP, x_star[1] + x_star_dot[1] * T_STEP]
     return new_x_star
 
 def generate_observation(x_star, theta_y):
-    new_y = x_star - theta_y + rng.normal(0.0, 0.5)
+    new_y = [x_star[0] - theta_y + rng.normal(0.0, 0.5), x_star[1] - theta_y + rng.normal(0.0, 0.5)]
     return new_y
 
 # Generative Model
 def state_transition_function(theta_x, u_x):
-    x_n = theta_x - u_x
+    k = theta_x[0]
+    m = theta_x[1]
+    v = theta_x[2]
+
+    x_n = [v[1] + u_x[1], (k / m) * v[0] - u_x[0]]
     return x_n
 
-def observation_gnerating_function(u_x, theta_y):
-    u_y = u_x - theta_y
+def observation_generating_function(u_x, theta_y):
+    u_y = [u_x[0] - theta_y, u_x[1] - theta_y]
     return u_y
 
 def update_hidden_state(u_x, lambda_y, e_y, dg_du, lambda_x, e_x, df_du, k):
     # Free Energy Gradient
     # In this case there is no place to plug in u_x as the slope is the same for all possible values
-    gradient = lambda_y * e_y * dg_du + lambda_x * e_x * df_du
-    new_u_x = u_x + T_STEP * k * gradient
+    print(e_y)
+    print(lambda_y, np.array(e_y).T, np.array(dg_du).T)
+    gradient = lambda_y @ np.array(e_y).T * np.array(dg_du) + lambda_x @ np.array(e_x).T * np.array(df_du)
+    new_u_x = [u_x[0] + T_STEP * k * gradient[0], u_x[1] + T_STEP * k * gradient[1]]
     return new_u_x
 
-def recalculate_free_energy(lambda_y, e_y, lambda_x, e_x):  # should this be ln ???
-    new_f = lambda_y * (e_y ** 2) + lambda_x * (e_x ** 2) + np.log((1 / lambda_y) * (1 / lambda_x))
+def recalculate_free_energy(lambda_y_arr, e_y, lambda_x_arr, e_x):  
+    f_x = 0
+    for i, lam in enumerate(lambda_x_arr): 
+        f_x += lam * e_x[i] ** 2 + np.log(lam ** -1)
+    f_y = 0
+    for i, lam in enumerate(lambda_y_arr): 
+        f_y += lam * e_y[i] ** 2 + np.log(lam ** -1)
+    new_f = 0.5 * (f_x + f_y)
     return new_f
 
 def recalculate_prediction_error(u_x, theta_x, y, theta_y):
     x_n = state_transition_function(theta_x, u_x)
-    next_e_x = u_x - x_n
+    next_e_x = [u_x[0] - x_n[0], u_x[1] - x_n[1]]
 
-    u_y = observation_gnerating_function(u_x, theta_y)
-    next_e_y = y - u_y
+    u_y = observation_generating_function(u_x, theta_y)
+    next_e_y = [y[0] - u_y[0], y[1] - u_y[1]]
     return next_e_x, next_e_y, u_y
 
 def graph_results(x_star, y, u_x, u_y, e_x, e_y, f):
-    fig, axs = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+    fig, axs = plt.subplots(6, 1, figsize=(10, 12), sharex=True)
+    
+    x_star_arr = np.array(x_star)
+    y_arr = np.array(y)
+    u_x_arr = np.array(u_x)
+    u_y_arr = np.array(u_y)
+    e_x_arr = np.array(e_x)
+    e_y_arr = np.array(e_y)
 
     # --- GRAPH 1: 4 Values ---
-    axs[0].plot(T, x_star, label="x*")
-    axs[0].plot(T, y, label="y")
-    axs[0].plot(T, u_x, label="u_x")
-    axs[0].plot(T, u_y, label="u_y")
+    axs[0].plot(T, x_star_arr[:, 0], label="x* 0")
+    axs[0].plot(T, x_star_arr[:, 1], label="x* 1")
     axs[0].legend(loc='lower center')
     axs[0].grid(True, linestyle='--', alpha=0.5)
 
     # --- GRAPH 2: 2 Values ---
-    axs[1].plot(T, e_x, label="state error")  # 'k--' makes a black dashed line
-    axs[1].plot(T, e_y, label="observation error")
+    axs[1].plot(T, y_arr[:, 0], label="y 0")
+    axs[1].plot(T, y_arr[:, 1], label="y 1")
     axs[1].legend(loc='lower center')
     axs[1].grid(True, linestyle='--', alpha=0.5)
 
-    # --- GRAPH 3: 1 Value ---
-    axs[2].plot(T, f, color='purple', linewidth=2, label='Free Energy')
-    axs[2].set_ylabel('Energy / Error')
-    axs[2].set_xlabel('Time')
-    axs[2].legend(loc='upper right')
+    # --- GRAPH 3: 2 Values ---
+    axs[2].plot(T, x_star_arr[:, 0], label="x* 0")
+    axs[2].plot(T, x_star_arr[:, 1], label="x* 01")
+    axs[2].plot(T, u_x_arr[:, 0], label="u_x 0")
+    axs[2].plot(T, u_x_arr[:, 1], label="u_x 1")
+    axs[2].legend(loc='lower center')
     axs[2].grid(True, linestyle='--', alpha=0.5)
 
-    # 3. Clean up the spacing and save the file
+    # --- GRAPH 4: 2 Values ---
+    axs[3].plot(T, y_arr[:, 0], label="y 0")
+    axs[3].plot(T, y_arr[:, 1], label="y 1")
+    axs[3].plot(T, u_y_arr[:, 0], label="u_y 0")
+    axs[3].plot(T, u_y_arr[:, 1], label="u_y 1")
+    axs[3].legend(loc='lower center')
+    axs[3].grid(True, linestyle='--', alpha=0.5)
+
+    # --- GRAPH 5: 1 Value ---
+    axs[4].plot(T, e_x_arr[:, 0], label="state error 0")
+    axs[4].plot(T, e_x_arr[:, 1], label="state error 1")
+    axs[4].plot(T, e_y_arr[:, 0], label="observation error 0")
+    axs[4].plot(T, e_y_arr[:, 1], label="observation error 1")
+    axs[4].legend(loc='lower center')
+    axs[4].grid(True, linestyle='--', alpha=0.5)
+
+    # --- GRAPH 6: 1 Value ---
+    axs[5].plot(T, f, color='purple', linewidth=2, label='Free Energy')
+    axs[5].set_ylabel('Energy / Error')
+    axs[5].set_xlabel('Time')
+    axs[5].legend(loc='upper right')
+    axs[5].grid(True, linestyle='--', alpha=0.5)
+
     plt.tight_layout()  # Automatically adjusts margins so titles/labels don't overlap
-    plt.savefig('generalized_filtering_results.png')
+    plt.savefig('multi_var_generalized_filtering_results.png')
 
 def main():
     # Generative process vars
-    theta_star_x = 10
-    x_star = [5]
+    k = 4
+    m = 3
+    v = [5, 0]
+    theta_star_x = [k, m, v]
+    x_star = [[0, 0]]
 
     theta_star_y = 3
-    initial_observation = x_star[-1] - theta_star_y
+    initial_observation = [x_star[-1][0] - theta_star_y, x_star[-1][1] - theta_star_y]
     y = [initial_observation]
 
     # Generative model vars
-    k = 0.1
+    k = 1
 
-    u_x = [15]
+    u_x = [[8, 8]]
 
-    lambda_y = 50
+    lambda_x_mat = np.linalg.inv(2 * np.identity(2))
+    lambda_y_mat = np.linalg.inv(0.1 * np.identity(2))
+    lambda_x_arr = np.diag(lambda_x_mat)
+    lambda_y_arr = np.diag(lambda_y_mat)
+
+    theta_x = [k, m, v]
     theta_y = 3
 
-    lambda_x = 0.2
-    theta_x = 10
+    df_du = [1, -1]
+    dg_du = [1, 1]
 
     # Initial state prediction error
     x_n = state_transition_function(theta_x, u_x[-1])
-    e_x = [u_x[-1] - x_n]
+    e_x = [[u_x[-1][0] - x_n[0], u_x[-1][1] - x_n[1]]]
 
     # Initial observation prediction error
-    u_y = [observation_gnerating_function(u_x[-1], theta_y)]
-    e_y = [initial_observation - u_y[-1]]
-
+    u_y = [observation_generating_function(u_x[-1], theta_y)]
+    e_y = [[initial_observation[0] - u_y[-1][0], initial_observation[1] - u_y[-1][1]]]
+    print(e_y, e_x)
     # Initial Free Energy
-    f = [lambda_y * (e_y[-1] ** 2) + lambda_x * (e_x[-1] ** 2) + np.log((1 / lambda_y) * (1 / lambda_x))] 
+    f_x = 0
+    for i, lam in enumerate(lambda_x_arr): 
+        f_x += lam * e_x[0][i] ** 2 + np.log(lam ** -1)
+    f_y = 0
+    for i, lam in enumerate(lambda_y_arr): 
+        f_y += lam * e_y[0][i] ** 2 + np.log(lam ** -1)
+    f = [0.5 * (f_x + f_y)]
 
     # AIF
     for _ in LOOP_T:
@@ -136,12 +191,10 @@ def main():
         ####### Generative Model #######
 
         # Update hidden state using observation and generative model
-        dg_du = 1
-        df_du = -1
-        u_x.append(update_hidden_state(u_x[-1], lambda_y, e_y[-1], dg_du, lambda_x, e_x[-1], df_du, k))
+        u_x.append(update_hidden_state(u_x[-1], lambda_y_mat, e_y[-1], dg_du, lambda_x_mat, e_x[-1], df_du, k))
         
         # Update free energy calculation
-        f.append(recalculate_free_energy(lambda_y, e_y[-1], lambda_x, e_x[-1]))
+        f.append(recalculate_free_energy(lambda_y_arr, e_y[-1], lambda_x_arr, e_x[-1]))
 
         # Update prediction errors using new observation and hidden state estimate 
         next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], theta_x, y[-1], theta_y)
