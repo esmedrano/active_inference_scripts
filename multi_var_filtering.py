@@ -1,7 +1,47 @@
 """
-This is a multivariate generalized filter for perception. The agent models Hooke's Law, which describes the oscilation of a linear spring. 
+This is an example of a multivariate generalized filter for perception. 
+The agent models Hooke's Law, which describes the oscilation of a linear spring. 
 
-The code below is copy pasted from generalized_filtering.py and is a work in progress. 
+Please note that according to the Gemini, the math is actually not Hooke's Law. 
+It has been modified to show a more interesting, oscillatory behavior.
+
+Please forgive the following rather opaque explanation: 
+
+####################################################
+# Derivation of the true Hooke's Law state update: #
+####################################################
+
+Hooke's Law:
+F = -kx
+   
+Newton's Second Law:
+F = ma
+
+ma = -kx
+a  = (-k/m) * x
+
+accleration as the derivative of velocity x_1:
+dx_1 = (-k/m) * x_0
+
+velocity as the derivative of position x_0:
+dx_0 = x_1
+
+Therefore the state update is:
+position: x_0 + x_1 * t
+velocity: x_1 + (-k/m) * x_0 * t]
+
+The example from the book uses the following velocity, acceleration, and state update:
+
+velocity as the derivative of position:
+v_0 + x_1
+
+acceleration as the derivative of velocity:
+(k / m) * v_1 - x_0
+
+position: x_0 + (v_1 + x_0) * t
+velocity: x_1 + ((k/m) * v_1 - x_0) * t 
+
+This creates a more interesting oscillatory behavior than the true Hooke's Law.
 """
 
 
@@ -53,9 +93,15 @@ def observation_generating_function(u_x, theta_y):
 def update_hidden_state(u_x, lambda_y, e_y, dg_du, lambda_x, e_x, df_du, k):
     # Free Energy Gradient
     # In this case there is no place to plug in u_x as the slope is the same for all possible values
-    print(e_y)
-    print(lambda_y, np.array(e_y).T, np.array(dg_du).T)
-    gradient = lambda_y @ np.array(e_y).T * np.array(dg_du) + lambda_x @ np.array(e_x).T * np.array(df_du)
+
+    # Notice in the print statement below that the error arrays e_y and e_x are printed [e_1, e_2] instead of [[e_1], [e_2]].
+    # This is because numpy automatically converted the python list to a 1D array. Also, attempting to transpose a 1D numpy
+    # array does nothing. Luckily, numpy automatically transposes it when matrix multiplication requires it. Terefore, the .T 
+    # of the errors in the gradient are not necessary but are there so no one gets confused. 
+    
+    # print(f"lambda_y: \n{lambda_y}, \ne_y: \n{np.array(e_y)}, \ndg_du: \n{dg_du}, \nlambda_x: \n{lambda_x}, \ne_x: \n{np.array(e_x).T}, \ndf_du: \n{df_du}")
+    
+    gradient = dg_du.T @ lambda_y @ np.array(e_y).T + df_du.T @ lambda_x @ np.array(e_x).T
     new_u_x = [u_x[0] + T_STEP * k * gradient[0], u_x[1] + T_STEP * k * gradient[1]]
     return new_u_x
 
@@ -69,11 +115,11 @@ def recalculate_free_energy(lambda_y_arr, e_y, lambda_x_arr, e_x):
     new_f = 0.5 * (f_x + f_y)
     return new_f
 
-def recalculate_prediction_error(u_x, theta_x, y, theta_y):
-    x_n = state_transition_function(theta_x, u_x)
+def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
+    x_n = state_transition_function(theta_x, u_x_prev)
     next_e_x = [u_x[0] - x_n[0], u_x[1] - x_n[1]]
 
-    u_y = observation_generating_function(u_x, theta_y)
+    u_y = observation_generating_function(u_x_prev, theta_y)
     next_e_y = [y[0] - u_y[0], y[1] - u_y[1]]
     return next_e_x, next_e_y, u_y
 
@@ -101,7 +147,7 @@ def graph_results(x_star, y, u_x, u_y, e_x, e_y, f):
 
     # --- GRAPH 3: 2 Values ---
     axs[2].plot(T, x_star_arr[:, 0], label="x* 0")
-    axs[2].plot(T, x_star_arr[:, 1], label="x* 01")
+    axs[2].plot(T, x_star_arr[:, 1], label="x* 1")
     axs[2].plot(T, u_x_arr[:, 0], label="u_x 0")
     axs[2].plot(T, u_x_arr[:, 1], label="u_x 1")
     axs[2].legend(loc='lower center')
@@ -158,8 +204,10 @@ def main():
     theta_x = [k, m, v]
     theta_y = 3
 
-    df_du = [1, -1]
-    dg_du = [1, 1]
+    df_du = np.array([[0, 1], 
+                      [-1, 0]])
+    dg_du = np.array([[1, 0], 
+                      [0, 1]])
 
     # Initial state prediction error
     x_n = state_transition_function(theta_x, u_x[-1])
@@ -168,7 +216,7 @@ def main():
     # Initial observation prediction error
     u_y = [observation_generating_function(u_x[-1], theta_y)]
     e_y = [[initial_observation[0] - u_y[-1][0], initial_observation[1] - u_y[-1][1]]]
-    print(e_y, e_x)
+    
     # Initial Free Energy
     f_x = 0
     for i, lam in enumerate(lambda_x_arr): 
@@ -181,7 +229,7 @@ def main():
     # AIF
     for _ in LOOP_T:
         ####### Generative Process #######
-
+        
         # Generate new external state and observation 
         x_star.append(generate_state(x_star[-1], theta_star_x))    
         y.append(generate_observation(x_star[-1], theta_star_y))
@@ -195,9 +243,9 @@ def main():
         
         # Update free energy calculation
         f.append(recalculate_free_energy(lambda_y_arr, e_y[-1], lambda_x_arr, e_x[-1]))
-
+        
         # Update prediction errors using new observation and hidden state estimate 
-        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], theta_x, y[-1], theta_y)
+        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], u_x[-2], theta_x, y[-1], theta_y)
         e_x.append(next_e_x)
         e_y.append(next_e_y)
         u_y.append(next_u_y)
