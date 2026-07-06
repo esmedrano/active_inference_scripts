@@ -49,6 +49,8 @@ def generate_observation(x_star, theta_y):
 
 # Generative Model
 def state_transition_function(theta_x, u_x):
+    # This is the agent's expectation of the velocity of the external state
+    # It is used to calculate the state prediction error 
     x_n = theta_x - u_x
     return x_n
 
@@ -68,7 +70,12 @@ def recalculate_free_energy(lambda_y, e_y, lambda_x, e_x):
     return new_f
 
 def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
+    # The agnet expects the external state to move at a velocity of x_n
     x_n = state_transition_function(theta_x, u_x_prev)
+
+    # u_x is the agent's estimatate of the external state position at time t
+    # x_n is the agent's prediction of the velocity at time t-1, 
+    # meaning subtracting it from u_x gives you the error of the velocity prediction.  
     next_e_x = u_x - x_n
 
     u_y = observation_generating_function(u_x, theta_y)
@@ -101,7 +108,7 @@ def graph_results(x_star, y, u_x, u_y, e_x, e_y, f):
 
     # Clean up the spacing and save the file
     plt.tight_layout()  # Automatically adjusts margins so titles/labels don't overlap
-    plt.savefig('generalized_filtering_results.png')
+    plt.savefig('results/generalized_filtering_results.png')
 
 def main():
     ####### Generative process vars #######

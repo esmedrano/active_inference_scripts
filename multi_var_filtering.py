@@ -177,7 +177,7 @@ def graph_results(x_star, y, u_x, u_y, e_x, e_y, f):
     axs[5].grid(True, linestyle='--', alpha=0.5)
 
     plt.tight_layout()  # Automatically adjusts margins so titles/labels don't overlap
-    plt.savefig('multi_var_generalized_filtering_results.png')
+    plt.savefig('results/multi_var_filtering_results.png')
 
 def main():
     # Generative process vars
