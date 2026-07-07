@@ -119,8 +119,9 @@ def main():
     # A list containing the external state of x for each time step. The initial external state is 5. 
     x_star = [5]
 
-    # A list containing the agent's observation for each time step. The initial observation is calculated here using the observation generating function. 
-    initial_observation = observation_generating_function(x_star[-1], theta_star_y)
+    # A list containing the agent's observation for each time step. 
+    # The initial observation is calculated here using the observation generating function from the generative process. 
+    initial_observation = generate_observation(x_star[-1], theta_star_y)
     y = [initial_observation]
 
     ####### Generative model vars #######

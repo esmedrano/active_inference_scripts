@@ -37,6 +37,11 @@ have taken way, way longer without the book and my model gf (Gemini Flash) (than
 """
 TO DO
 
+Correct the loop: 
+generate full external x_tilde and pass it to the agent to calcualte true y
+calculate the agents y prediction using the initial u_x_tilde belief
+fix y error calcualtion by using true y - y prediction
+
 move vars to main loop
 put noise vars into initialization function in main before loop 
 add a "light intensity" simile to explain why the observations of the trajectory predictions are different from the trajectory predictions themselves
@@ -56,9 +61,6 @@ LOOP_T = np.arange(0, 10, T_STEP)
 # Used for the graphs
 # Add one extra time step for the initial values of x, y, e_x, e_y, and f so that the time arrary and the value arrays are the same length
 T = np.append(LOOP_T, LOOP_T[-1] + T_STEP) 
-
-# Generalized Coordinates Embedding Depth
-embeddings = 3 
 
 # random number generator with a fixed seed for reproducibility
 rng = np.random.default_rng(seed=42)
@@ -85,9 +87,10 @@ scaling_factor_2 = (-gamma_val / 2)
 noise_kernel_0 = scaling_factor_0 * np.exp(-(t_axis**2 / 4) * gamma_val)
 noise_kernel_0 /= np.sum(noise_kernel_0) # Normalize to preserve total variance
 
-# The following are the derivatives that are used for the generative coordinates. 
+# The following are the derivatives that are currently used for both the external state and the generative coordinates. 
 # I could have used a differrent variance but I'm sticking with the external state's variance of 8 
 # so I don't have to rewrite all of this again like for the obervation kernel below. 
+# If this prooves to be too much noise for the GCs I will create a sepparate set of kernels with a lower variance. 
 noise_kernel_1 = noise_kernel_0 * scaling_factor_1
 noise_kernel_1 /= np.sum(noise_kernel_1) # Normalize to preserve total variance
 
@@ -128,7 +131,9 @@ def smooth_noise(noise_type, white_noise):
         ext_x_raw_noise_buffer = np.append(ext_x_raw_noise_buffer[1:], white_noise)
 
         # 2. Convolve! Dot product blends the history with the h_\omega weights
-        smooth_w = np.dot(ext_x_raw_noise_buffer, noise_kernel_0)
+        smooth_w = [np.dot(ext_x_raw_noise_buffer, noise_kernel_0),
+                    np.dot(ext_x_raw_noise_buffer, noise_kernel_1),
+                    np.dot(ext_x_raw_noise_buffer, noise_kernel_2)]
 
     # y and generalized measurements noise buffer 
     if noise_type == 1:
@@ -148,9 +153,9 @@ def smooth_noise(noise_type, white_noise):
 
         # 2. Convolve! Dot product blends the history with the h_\omega weights
         # I could have put this in a for loop but it is more readable and arguably less complicated this way  
-        smooth_w = [np.dot(y_raw_noise_buffer, noise_kernel_0), 
-                    np.dot(y_raw_noise_buffer, noise_kernel_1), 
-                    np.dot(y_raw_noise_buffer, noise_kernel_2)]
+        smooth_w = [np.dot(gen_coords_raw_noise_buffer, noise_kernel_0), 
+                    np.dot(gen_coords_raw_noise_buffer, noise_kernel_1), 
+                    np.dot(gen_coords_raw_noise_buffer, noise_kernel_2)]
 
     return smooth_w
 
@@ -161,10 +166,12 @@ def generate_state(x_star, theta_star_x):
     smooth_w = smooth_noise(0, white_noise_sample)
 
     # Velocity of external state
-    x_star_dot = theta_star_x - x_star + smooth_w
+    velocity = theta_star_x - x_star + smooth_w[0]
+    acceleration = - x_star + smooth_w[1]
+    jerk = smooth_w[2]
 
     # x* update
-    new_x_star = x_star + x_star_dot * T_STEP
+    new_x_star = x_star * T_STEP
     return new_x_star
 
 # Generate an observation of the external state position 
@@ -173,8 +180,8 @@ def generate_observation(x_star, theta_y):
 
     smooth_w = smooth_noise(1, white_noise_sample)
 
-    new_y = x_star - theta_y + smooth_w
-    return new_y
+    new_y = x_star - theta_y + smooth_w[0]
+    return new_y, smooth_w
 
 # Generative Model
 def state_transition_function(theta_x, u_x):
@@ -184,8 +191,8 @@ def state_transition_function(theta_x, u_x):
 
     # These are the derivatives of the Taylor series approximation given the agent's model of external state velocity
     velocity = theta_x - u_x + smooth_w[0]  # smooth_w[1] is the first derivative 
-    acceleration = -1 + + smooth_w[1]       # smooth_w[2] is the second derivative
-    jerk = 0 + + smooth_w[2]                # smooth_w[3] is the third derivative
+    acceleration = -1 + smooth_w[1]       # smooth_w[2] is the second derivative
+    jerk = 0 + smooth_w[2]                # smooth_w[3] is the third derivative
 
     # Generalized Coordinates of Motion
     gen_coords = np.array([velocity, acceleration, jerk])
@@ -194,29 +201,54 @@ def state_transition_function(theta_x, u_x):
 
 # Generate a y trajectory prediction 
 # i.e. what the "light intensity" observation of the predicted external state velocity, acceleration, jerk, etc. will be  
-def observation_generating_function(u_x, theta_y):
+# The y noise vector is generated using the white noise sample from the observation in the generative process step in generate_observation(). 
+def observation_generating_function(u_x, theta_y, y_noise):
     # These are the derivatives of the Taylor series approximation given the agent's model of observation velocity
-    velocity = u_x - theta_y
-    acceleration = 1
-    jerk = 0 
+    velocity = u_x - theta_y + y_noise[1]
+    acceleration = 1 + y_noise[2]
+    jerk = 0 + y_noise[3] 
 
     # Generalized Measurement of Motion
     gen_measuremnt = np.array([velocity, acceleration, jerk])
 
     return gen_measuremnt
 
-def update_hidden_state(u_x, lambda_y, e_y, dg_du, lambda_x, e_x, df_du, k):
+def update_hidden_state(u_x_tilde, lambda_y_matrix, e_y, dg_du, lambda_x_matrix, e_x, df_du, k, embeddings, state_elements):
     # Free Energy Gradient
     # In this case there is no place to plug in u_x as the slope is the same for all possible values
-    gradient = lambda_y * e_y * dg_du + lambda_x * e_x * df_du
-    new_u_x = u_x + T_STEP * k * gradient
+
+    # Build the shift operator matrix D = the Kronecker product of S and I of size D=[mc x mc]
+    # where S is a 0 matrix of size [m x m] with ones in the superdiagonal 
+    # and I is the identity matrix of size [c x c] 
+    s = np.eye(embeddings, k=1)      # Create a square identity matrix of size embeddings with ones in the superdiagonal 1 instead of the main diagonal 0  
+    i = np.identity(state_elements)  # Another square identity matrix
+    d = s * i 
+
+    print(f"d: {d}")
+
+    # Generalized Coordinates Jacobian
+    df_du = np.array([[0, 0, 0]
+                      [0, 0, 0]
+                      [0, 0, 0]])
+    
+    # Generalized Measurements Jacobian
+    dg_du = np.array([[0, 0, 0]
+                      [0, 0, 0]
+                      [0, 0, 0]])
+    
+    # Those are calculated by hand. Maybe in the future I can use some auto differentiation given the velocity function. 
+
+    gradient = (d - df_du).T * lambda_x_matrix * e_x + (dg_du).T * lambda_y_matrix * e_y
+    Du_x = np.append(u_x_tilde[1:], 0)
+    u_x_velocity = Du_x - k * gradient
+    new_u_x = u_x_tilde + T_STEP * u_x_velocity
     return new_u_x
 
-def recalculate_free_energy(lambda_y, e_y, lambda_x, e_x):  
-    new_f = lambda_y * (e_y ** 2) + lambda_x * (e_x ** 2) + np.log((1 / lambda_y) * (1 / lambda_x))
+def recalculate_free_energy(lambda_y_base, lambda_y_vector, e_y, lambda_x_base, lambda_x_vector, e_x):  
+    new_f = lambda_y_base * (e_y[-1] ** 2) + lambda_x_base * (e_x[-1] ** 2) + np.sum(np.log(lambda_y_vector)) + np.sum(np.log(lambda_x_vector))
     return new_f
 
-def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
+def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y, y_noise):
     # The agnet expects the external state to move at a velocity of x_n
     x_n = state_transition_function(theta_x, u_x_prev)
     
@@ -225,7 +257,7 @@ def recalculate_prediction_error(u_x, u_x_prev, theta_x, y, theta_y):
     # meaning subtracting it from u_x gives you the error of the velocity prediction.
     next_e_x = u_x - x_n
 
-    u_y = observation_generating_function(u_x, theta_y)
+    u_y = observation_generating_function(u_x, theta_y, y_noise)
     next_e_y = y - u_y
     return next_e_x, next_e_y, u_y
 
@@ -264,19 +296,25 @@ def main():
     theta_star_y = 3
     
     # A list containing the external state of x for each time step. The initial external state is 5. 
-    x_star = [5]
+    x_star = [[5, 0, 0, 0]]
 
     # A list containing the agent's observation for each time step. The initial observation is calculated here using the observation generating function. 
-    initial_observation = observation_generating_function(x_star[-1], theta_star_y)
-    y = [initial_observation]
+    initial_observation, initial_y_noise = generate_observation(x_star[-1], theta_star_y)
+    y = [[initial_observation]]
 
     ####### Generative model vars #######
+    
+    # Generalized Coordinates Embedding Depth
+    embeddings = 3 
+
+    # The number of states per observation 
+    state_elements = 1
 
     # The learning rate kappa of the gradient descent step
     k = 0.1
 
     # The list of hidden state estimations at each time step. The initial guess is 15 but can be set to anything. 
-    u_x = [15]
+    u_x = np.array([[15]])
 
     # Theta_x is used in the agents state transition function theta_x - u_x to generate it's hypothesis regarding the new value of u_x.  
     theta_x = 10
@@ -287,20 +325,18 @@ def main():
     # The precisions (inverse variances) of hidden states x and observations y 
     lambda_x_base = 0.2
     lambda_y_base = 50
-    lambda_x = np.diag(lambda_x_base * np.identity(embeddings))
-    lambda_y = np.diag(lambda_y_base * np.identity(embeddings))
-
-    # The derivatives of the observation generating function g(m) and the state transition function f(m) with respect to u_x. 
-    # These are used to derive the Free Energy gradient used for the gradient descent u_x update. 
-    dg_du = 1
-    df_du = -1
+    lambda_x_matrix = lambda_x_base * np.identity(embeddings)
+    lambda_y_matrix = lambda_y_base * np.identity(embeddings)
+    lambda_x_vector = np.diag(lambda_x_matrix)
+    lambda_y_vector = np.diag(lambda_y_matrix)
 
     # Initial state prediction error vector
     # Typically the error is calculated using the observed generalized coordinates u_x and the predicted state, 
     # but there is no observation on the first step so we use the shifted prediction Du_x to get the loop off the ground
     
     # Initial expectation of motion i.e. the derivatives of the Taylor Series approximation 
-    u_x_tilde = state_transition_function(theta_x, u_x[-1]) 
+    u_x_tilde = state_transition_function(theta_x, u_x[-1][0]) 
+    u_x = np.append(u_x, [u_x_tilde], axis=1)  # Now u_x = [[position, vel, acc, jk]]
 
     # Initial motion of expectation i.e. the shifted expectation of motion
     # I haven't implemented this as the matrix multiplication but it can be implemented as such. (see book p144)
@@ -312,18 +348,19 @@ def main():
     # Initial observation prediction error
 
     # Initial expectation of motion i.e. the derivatives of the Taylor Series approximation 
-    u_y_tilde = observation_generating_function(u_x[-1], theta_y)
+    y_tilde = observation_generating_function(u_x[-1][0], theta_y, initial_y_noise)
+    y = np.append(y, [y_tilde], axis=1)  # Now y = [[position, vel, acc, jk]]
 
     # Initial motion of expectation i.e. the shifted expectation of motion
     # I haven't implemented this as the matrix multiplication but it can be implemented as such. (see book p144)
-    Du_y = np.append(u_y_tilde[1:], 0)
+    Du_y = np.append(y_tilde[1:], 0)
 
     # Initial state prediction error vector    
-    e_y = Du_y - u_y_tilde
+    e_y = Du_y - y_tilde
 
     # Initial Free Energy
     ############################## THERE MAY BE A MATHEMATICAL ERROR HERE ##############################
-    f = [lambda_y_base * (e_y[-1] ** 2) + lambda_x_base * (e_x[-1] ** 2) + np.sum(np.log(lambda_y)) + np.sum(np.log(lambda_x))] 
+    f = [lambda_y_base * (e_y[-1] ** 2) + lambda_x_base * (e_x[-1] ** 2) + np.sum(np.log(lambda_y_vector)) + np.sum(np.log(lambda_x_vector))] 
 
     # AIF
     for _ in LOOP_T:
@@ -331,20 +368,21 @@ def main():
 
         # Generate new external state and observation 
         x_star.append(generate_state(x_star[-1], theta_star_x))    
-        y.append(generate_observation(x_star[-1], theta_y))
+        observation, y_noise = generate_observation(x_star[-1], theta_y)
+        y.append(observation)
         # print(f"External state: {x_star}")
         # print(f"Observation: {y}")
         
         ####### Generative Model #######
 
         # Update hidden state using observation and generative model
-        u_x.append(update_hidden_state(u_x[-1], lambda_y, e_y[-1], dg_du, lambda_x, e_x[-1], df_du, k))
+        u_x.append(update_hidden_state(u_x[-1], lambda_y_matrix, e_y[-1], lambda_x_matrix, e_x[-1], k, embeddings, state_elements))
         
         # Update free energy calculation
-        f.append(recalculate_free_energy(lambda_y, e_y[-1], lambda_x, e_x[-1]))
+        f.append(recalculate_free_energy(lambda_y_base, lambda_y_vector, e_y[-1], lambda_x_base, lambda_x_vector, e_x[-1]))
 
         # Update prediction errors using new observation and hidden state prediction 
-        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], u_x[-2], theta_x, y[-1], theta_y)
+        next_e_x, next_e_y, next_u_y = recalculate_prediction_error(u_x[-1], u_x[-2], theta_x, y[-1], theta_y, y_noise)
         e_x.append(next_e_x)
         e_y.append(next_e_y)
         u_y.append(next_u_y)
