@@ -44,7 +44,6 @@ velocity: x_1 + ((k/m) * v_1 - x_0) * t
 This creates a more interesting oscillatory behavior than the true Hooke's Law.
 """
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 
