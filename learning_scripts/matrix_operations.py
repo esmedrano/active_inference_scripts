@@ -1,5 +1,5 @@
 """
-Matrix Operations and their Geometric Visulaizations 
+Matrix Operations and their Geometric Visualizations 
 
 by Gemini Flash
 """
@@ -14,6 +14,12 @@ def create_base_grid(min_val=-4, max_val=5):
     """Creates a grid of coordinates falling strictly on whole numbers."""
     range_values = np.arange(min_val, max_val, 1)
     x, y = np.meshgrid(range_values, range_values)
+    print(f"x: {x}")
+    print(f"y: {y}")
+    print(f"Flattened x: {x.flatten()}")
+    print(f"Flattened y: {y.flatten()}")
+    print(f"Stacked grid: {np.vstack([x.flatten(), y.flatten()])}")
+    print(f"Grid shape: {np.vstack([x.flatten(), y.flatten()]).shape}")
     return np.vstack([x.flatten(), y.flatten()])
 
 def setup_axes(ax, title, limits=[-6, 6]):
@@ -35,7 +41,21 @@ def setup_axes(ax, title, limits=[-6, 6]):
 def demo_matrix_vector():
     """
     Geometric Meaning: Moving a single specific vector to its new location
-    in the morphed space dictated by the basis landing pads.
+    in the morphed space dictated by the basis landing pads. See linear_transformations.ipynb for a more interactive version of this demo.
+    
+    Each column of the matrix is the shifted endpoint of the basis vector. Every point on the grid is a multiple of these basis vectors.
+    When the matrix is multiplied by a vector, the new i basis vector is scaled by the vector's x component, and the new j basis vector is 
+    scaled by the vector's y component. The two scaled vectors are then summed to find the new endpoint of the transformed vector. 
+    The jupitor notebook makes this easier to picture. 
+
+    Multiplying a vector by a matrix is different. To understand this it helps to understand what it means to muliply a transposed vector by 
+    a vector. A transposed vector is a row vector, and when it is multiplied by a column vector, the result is a scalar score as the 
+    components are scaled and then summed. You can think of it like taking a column vector of office supplies and putting a row vector of   
+    the price of each supply in front of it. The result of the dot product is the total cost of all suppplies. 
+
+    When a row vector is multiplied by a matrix, the result is another row vector. This new row vector will score a column vector in the space 
+    scaled by the matrix, meaning you don't need to scale a column vector by the matrix and then use the original score vector. Instead
+    just take the scaled score vector and multiply it by the unscaled column vector. 
     """
     grid = create_base_grid()
     # Rotation matrix (approx 45 degrees)
