@@ -4,6 +4,8 @@ To be clear I basically copy pasted this from the book Fundamentals of Active In
 
 This repository contains a Python simulation of generalized filtering using a simple active inference model.
 
+The learning scripts folder from previous commits was moved to a private repo as it was functioning as my notes. I don't wnat to publish bad, half done math. Some of it was cool and I might make it public later, but I don't plan on polishing it any time soon.  
+
 ## Setup
 
 1. Create a Python virtual environment if you do not already have one:
@@ -30,8 +32,3 @@ The current dependencies are:
 ```bash
 python generalised_filtering.py
 ```
-
-## Notes
-
-- The dependency file `requirements.txt` was generated from the project virtual environment.
-- `.venv/` is ignored in Git so the repository stays lightweight.
